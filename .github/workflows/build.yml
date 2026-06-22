@@ -57,17 +57,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           curl -L -o ffmpeg-essentials.zip "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-          python -c "
-import zipfile, os
-with zipfile.ZipFile('ffmpeg-essentials.zip') as z:
-    for name in z.namelist():
-        if '/bin/ffmpeg.exe' in name:
-            with open('ffmpeg.exe', 'wb') as f:
-                f.write(z.read(name))
-            sz = os.path.getsize('ffmpeg.exe')
-            print(f'Extracted ffmpeg.exe ({sz} bytes)')
-            break
-"
+          python -c "import zipfile,os;z=zipfile.ZipFile('ffmpeg-essentials.zip');n=[x for x in z.namelist() if '/bin/ffmpeg.exe' in x];print('Found entries:', len(n));[(open('ffmpeg.exe','wb').write(z.read(x)),print('Extracted ffmpeg.exe ('+str(os.path.getsize('ffmpeg.exe'))+' bytes)')) for x in n]"
       - name: Bundle ffmpeg (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
