@@ -82,4 +82,31 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ytd-*
-          generate_release_notes: true
+          body: |
+            ## What's New
+
+            - **Video Download**: Best / 4K / 1080p / 720p / 480p quality presets
+            - **Audio Extract**: Best / 320k / 192k / 128k / 64k bitrate options
+            - **Playlist Support**: Download all, pick range, or select individual videos by title
+            - **YouTube Search**: Type any query directly — no URL needed
+            - **Smart Detection**: Auto-detects video, playlist, or video-in-playlist URLs
+            - **Info Preview**: Shows title, duration, and resolution before downloading
+            - **Download History**: Press `h` to view past downloads with saved paths
+            - **Path Memory**: Remembers last download folder
+            - **Skip Existing**: Skips files already downloaded
+
+            ## Platform Binaries
+
+            - **Windows**: `ytd-Windows.exe` (~15.5 MB)
+            - **Linux**: `ytd-Linux` (~29.7 MB)
+            - **macOS**: `ytd-macOS` (~14.4 MB)
+
+            ## Usage
+
+            ```
+            ./ytd-Windows.exe   # Windows
+            ./ytd-Linux         # Linux
+            ./ytd-macOS         # macOS
+            ```
+
+            Requires **FFmpeg** installed for best-quality video+audio merging. Without FFmpeg, falls back to best single-stream file.
