@@ -53,6 +53,16 @@ def get_ffmpeg_path():
     return shutil.which('ffmpeg')
 
 
+def ensure_ffmpeg_on_path():
+    ff = get_ffmpeg_path()
+    if ff:
+        parent = str(Path(ff).parent)
+        if parent not in os.environ.get('PATH', ''):
+            os.environ['PATH'] = parent + os.pathsep + os.environ.get('PATH', '')
+        return ff
+    return None
+
+
 def check_ffmpeg():
     return get_ffmpeg_path() is not None
 
@@ -126,7 +136,7 @@ def progress_hook(d):
 
 
 def download_video(url, path, mode='video', quality='best', audio_bitrate='best'):
-    ff_path = get_ffmpeg_path()
+    ff_path = ensure_ffmpeg_on_path()
     has_fm = ff_path is not None
 
     if mode == 'audio':

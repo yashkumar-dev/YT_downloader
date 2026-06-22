@@ -59,10 +59,26 @@ jobs:
 
       - name: Copy ffmpeg for bundling
         run: |
-          ffmpeg_path="$(command -v ffmpeg 2>/dev/null || where ffmpeg 2>/dev/null || echo "")"
+          ffmpeg_path=""
+          if command -v ffmpeg >/dev/null 2>&1; then
+            ffmpeg_path="$(command -v ffmpeg)"
+          fi
+          if [ -z "$ffmpeg_path" ] && [ -f "/c/ProgramData/chocolatey/bin/ffmpeg.exe" ]; then
+            ffmpeg_path="/c/ProgramData/chocolatey/bin/ffmpeg.exe"
+          fi
+          if [ -z "$ffmpeg_path" ] && [ -f "/usr/bin/ffmpeg" ]; then
+            ffmpeg_path="/usr/bin/ffmpeg"
+          fi
+          if [ -z "$ffmpeg_path" ] && [ -f "/usr/local/bin/ffmpeg" ]; then
+            ffmpeg_path="/usr/local/bin/ffmpeg"
+          fi
+          if [ -z "$ffmpeg_path" ] && [ -f "/opt/homebrew/bin/ffmpeg" ]; then
+            ffmpeg_path="/opt/homebrew/bin/ffmpeg"
+          fi
           if [ -n "$ffmpeg_path" ]; then
             echo "Found ffmpeg at $ffmpeg_path"
             cp "$ffmpeg_path" "./ffmpeg${{ matrix.ext }}"
+            ls -la "./ffmpeg${{ matrix.ext }}"
           else
             echo "ffmpeg not found"
           fi
