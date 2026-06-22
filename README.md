@@ -18,35 +18,31 @@ A Python-based CLI tool to download YouTube videos/playlists in the highest qual
 
 - Python 3.8+
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) (installed automatically via pip)
-- [ffmpeg](https://ffmpeg.org/download.html) (optional, but recommended for best quality video+audio merging)
 
-## Installation
-
-```bash
-# Clone the repo
-git clone https://github.com/yashkumar-dev/YT_downloader.git
-cd YT_downloader
-
-# Install dependencies
-pip install yt-dlp
-
-# (Optional) Install ffmpeg for best quality
-# Windows: winget install ffmpeg
-# macOS: brew install ffmpeg
-# Linux: sudo apt install ffmpeg
-```
-
-## Pre-built binaries (no Python required)
+## Pre-built binaries (recommended — no Python or ffmpeg required)
 
 Download the latest executable for your OS from [Releases](https://github.com/yashkumar-dev/YT_downloader/releases):
 
-| Platform | File |
-|----------|------|
-| Windows | `ytd-Windows.exe` |
-| macOS | `ytd-macOS` |
-| Linux | `ytd-Linux` |
+| Platform | File | Size |
+|----------|------|------|
+| Windows | `ytd-Windows.exe` | ~51 MB |
+| macOS | `ytd-macOS` | ~29 MB |
+| Linux | `ytd-Linux` | ~125 MB |
 
 Just download, double-click (or `chmod +x` on Linux/macOS), and run.
+
+**ffmpeg is bundled inside the executable** — high-quality downloads (1080p/4K) work out of the box with no manual setup.
+
+## Installation (from source)
+
+```bash
+git clone https://github.com/yashkumar-dev/YT_downloader.git
+cd YT_downloader
+pip install yt-dlp
+```
+
+> **Note:** If running from source, [ffmpeg](https://ffmpeg.org/download.html) is recommended for best quality video+audio merging.  
+> Install it via: `winget install ffmpeg` (Windows) / `brew install ffmpeg` (macOS) / `sudo apt install ffmpeg` (Linux).
 
 ## Usage (Python)
 
@@ -87,16 +83,17 @@ python ytd.py
 
 ```
 YT_downloader/
-├── ytd.py           # Main script
-├── ytd.bat          # Windows batch shortcut
-├── config.json      # Stores last download path (auto-generated)
-├── history.json     # Download history (auto-generated)
-├── requirements.txt # Python dependencies
-└── README.md        # This file
+├── ytd.py                    # Main script
+├── ytd.bat                   # Windows batch shortcut
+├── .github/workflows/build.yml # CI: builds + bundles ffmpeg into EXE
+├── config.json               # Stores last download path (auto-generated)
+├── history.json              # Download history (auto-generated)
+├── requirements.txt          # Python dependencies
+└── README.md                 # This file
 ```
 
 ## Notes
 
-- ffmpeg is required for best quality (merges separate video + audio streams)
-- Without ffmpeg, falls back to best single-stream file (usually 720p max)
+- **Pre-built binaries** include ffmpeg — high-quality downloads work immediately
+- When running from source, ffmpeg is required for best quality (merges separate video + audio streams); without it, falls back to best single-stream (usually 720p max)
 - Output format: `.mkv` (video), `.m4a` (audio)
