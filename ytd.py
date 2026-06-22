@@ -40,8 +40,21 @@ def save_config(data):
         json.dump(data, f, indent=2)
 
 
+def get_ffmpeg_path():
+    if getattr(sys, 'frozen', False):
+        meipass = Path(sys._MEIPASS)
+        ff = meipass / ('ffmpeg.exe' if sys.platform == 'win32' else 'ffmpeg')
+        if ff.exists():
+            return str(ff)
+    base = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
+    ff = base / ('ffmpeg.exe' if sys.platform == 'win32' else 'ffmpeg')
+    if ff.exists():
+        return str(ff)
+    return shutil.which('ffmpeg')
+
+
 def check_ffmpeg():
-    return shutil.which('ffmpeg') is not None
+    return get_ffmpeg_path() is not None
 
 
 def load_history():
@@ -113,7 +126,8 @@ def progress_hook(d):
 
 
 def download_video(url, path, mode='video', quality='best', audio_bitrate='best'):
-    has_fm = check_ffmpeg()
+    ff_path = get_ffmpeg_path()
+    has_fm = ff_path is not None
 
     if mode == 'audio':
         fmt = 'ba/b' if has_fm else 'bestaudio/best'
@@ -129,6 +143,9 @@ def download_video(url, path, mode='video', quality='best', audio_bitrate='best'
         'no_warnings': True,
         'windowsfilenames': True,
     }
+
+    if ff_path:
+        opts['ffmpeg_location'] = ff_path
 
     if has_fm and mode == 'video':
         opts['merge_output_format'] = 'mkv'

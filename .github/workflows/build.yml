@@ -17,12 +17,15 @@ jobs:
           - os: windows-latest
             name: Windows
             ext: .exe
+            sep: ';'
           - os: ubuntu-latest
             name: Linux
             ext: ''
+            sep: ':'
           - os: macos-latest
             name: macOS
             ext: ''
+            sep: ':'
 
     runs-on: ${{ matrix.os }}
     defaults:
@@ -54,9 +57,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller yt-dlp
 
-      - name: Build with PyInstaller
+      - name: Build with PyInstaller (bundling ffmpeg)
         run: |
-          pyinstaller --onefile --name ytd-${{ matrix.name }} --clean --noconfirm ytd.py
+          ffmpeg_path="$(which ffmpeg 2>/dev/null || true)"
+          if [ -z "$ffmpeg_path" ]; then
+            echo "ffmpeg not found, building without it"
+            pyinstaller --onefile --name ytd-${{ matrix.name }} --clean --noconfirm ytd.py
+          else
+            echo "Bundling ffmpeg from $ffmpeg_path"
+            pyinstaller --onefile --add-binary "$ffmpeg_path${{ matrix.sep }}." --name ytd-${{ matrix.name }} --clean --noconfirm ytd.py
+          fi
           echo "Build complete for ${{ matrix.name }}"
 
       - name: Upload artifact
