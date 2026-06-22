@@ -8,8 +8,13 @@ import urllib.parse
 from pathlib import Path
 from datetime import datetime
 
-CONFIG_FILE = Path(__file__).parent / "config.json"
-HISTORY_FILE = Path(__file__).parent / "history.json"
+if getattr(sys, 'frozen', False):
+    BASE_DIR = Path(sys.executable).parent
+else:
+    BASE_DIR = Path(__file__).parent
+
+CONFIG_FILE = BASE_DIR / "config.json"
+HISTORY_FILE = BASE_DIR / "history.json"
 
 QUALITY_PRESETS = {
     'best': ('bv*+ba/b', 'best'),

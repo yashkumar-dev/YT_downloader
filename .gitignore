@@ -2,3 +2,7 @@ config.json
 history.json
 __pycache__/
 *.pyc
+dist/
+build/
+*.spec
+ytd.exe

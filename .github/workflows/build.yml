@@ -1,0 +1,82 @@
+name: Build for all platforms
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            ext: .exe
+          - os: ubuntu-latest
+            name: Linux
+            ext: ''
+          - os: macos-latest
+            name: macOS
+            ext: ''
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install FFmpeg (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install FFmpeg (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install ffmpeg
+
+      - name: Install FFmpeg (Windows)
+        if: matrix.os == 'windows-latest'
+        run: choco install ffmpeg -y
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller yt-dlp
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onefile --name ytd-${{ matrix.name }} --clean --noconfirm ytd.py
+          echo "Build complete for ${{ matrix.name }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ytd-${{ matrix.name }}${{ matrix.ext }}
+          path: dist/ytd-${{ matrix.name }}${{ matrix.ext }}
+
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ytd-*
+          merge-multiple: true
+
+      - name: Display structure
+        run: ls -la
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ytd-*
+          generate_release_notes: true
