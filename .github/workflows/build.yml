@@ -48,54 +48,36 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: brew install ffmpeg
 
-      - name: Install FFmpeg (Windows)
-        if: matrix.os == 'windows-latest'
-        run: choco install ffmpeg -y
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller yt-dlp
 
-      - name: Copy ffmpeg for bundling
-        shell: python
+      - name: Download & bundle ffmpeg (Windows)
+        if: runner.os == 'Windows'
         run: |
-          import glob, shutil, os, sys
-
-          ext = '${{ matrix.ext }}'
-          ffmpeg_path = None
-
-          if sys.platform == 'win32':
-              # Find ffmpeg via PATH (gets chocolatey shim)
-              found = shutil.which('ffmpeg')
-              if found:
-                  size = os.path.getsize(found)
-                  # If it's a chocolatey shim (<1MB), find real binary in lib
-                  if size < 1_000_000:
-                      for pattern in [
-                          r'C:\ProgramData\chocolatey\lib\*\tools\**\ffmpeg.exe',
-                          r'C:\ProgramData\chocolatey\lib\*\tools\ffmpeg.exe',
-                      ]:
-                          for f in glob.glob(pattern, recursive=True):
-                              sz = os.path.getsize(f)
-                              if sz > 10_000_000:  # real ffmpeg is 100MB+
-                                  ffmpeg_path = f
-                                  break
-                          if ffmpeg_path:
-                              break
-                  else:
-                      ffmpeg_path = found
-          else:
-              # Linux/macOS: shutil.which works reliably
-              ffmpeg_path = shutil.which('ffmpeg')
-
-          if ffmpeg_path and os.path.getsize(ffmpeg_path) > 1_000_000:
-              shutil.copy2(ffmpeg_path, f'./ffmpeg{ext}')
-              print(f'Bundled ffmpeg from {ffmpeg_path} ({os.path.getsize(ffmpeg_path)} bytes)')
-          else:
-              print(f'ffmpeg not found or too small: {ffmpeg_path}')
-              if ffmpeg_path:
-                  print(f'  size was {os.path.getsize(ffmpeg_path) if os.path.exists(ffmpeg_path) else "N/A"}')
+          curl -L -o ffmpeg-essentials.zip "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          python -c "
+import zipfile, os
+with zipfile.ZipFile('ffmpeg-essentials.zip') as z:
+    for name in z.namelist():
+        if '/bin/ffmpeg.exe' in name:
+            with open('ffmpeg.exe', 'wb') as f:
+                f.write(z.read(name))
+            sz = os.path.getsize('ffmpeg.exe')
+            print(f'Extracted ffmpeg.exe ({sz} bytes)')
+            break
+"
+      - name: Bundle ffmpeg (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          ffmpeg_path="$(command -v ffmpeg)"
+          if [ -n "$ffmpeg_path" ]; then
+            cp "$ffmpeg_path" "./ffmpeg${{ matrix.ext }}"
+            ls -la "./ffmpeg${{ matrix.ext }}"
+          else
+            echo "ffmpeg not found"
+          fi
 
       - name: Build with PyInstaller
         run: |
@@ -108,6 +90,8 @@ jobs:
             pyinstaller --onefile --name ytd-${{ matrix.name }} --clean --noconfirm ytd.py
           fi
           echo "Build complete for ${{ matrix.name }}"
+          ls -la "dist/ytd-${{ matrix.name }}${{ matrix.ext }}"
+          echo "FFmpeg bundled: $(if [ -f ./ffmpeg${{ matrix.ext }} ]; then echo 'YES'; else echo 'NO'; fi)"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
