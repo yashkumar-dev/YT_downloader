@@ -57,15 +57,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller yt-dlp
 
-      - name: Build with PyInstaller (bundling ffmpeg)
+      - name: Copy ffmpeg for bundling
         run: |
-          ffmpeg_path="$(which ffmpeg 2>/dev/null || true)"
-          if [ -z "$ffmpeg_path" ]; then
-            echo "ffmpeg not found, building without it"
-            pyinstaller --onefile --name ytd-${{ matrix.name }} --clean --noconfirm ytd.py
+          ffmpeg_path="$(command -v ffmpeg 2>/dev/null || where ffmpeg 2>/dev/null || echo "")"
+          if [ -n "$ffmpeg_path" ]; then
+            echo "Found ffmpeg at $ffmpeg_path"
+            cp "$ffmpeg_path" "./ffmpeg${{ matrix.ext }}"
           else
-            echo "Bundling ffmpeg from $ffmpeg_path"
-            pyinstaller --onefile --add-binary "$ffmpeg_path${{ matrix.sep }}." --name ytd-${{ matrix.name }} --clean --noconfirm ytd.py
+            echo "ffmpeg not found"
+          fi
+
+      - name: Build with PyInstaller
+        run: |
+          if [ -f "./ffmpeg${{ matrix.ext }}" ]; then
+            echo "Bundling ffmpeg"
+            SEP="${{ matrix.sep }}"
+            pyinstaller --onefile --add-binary "./ffmpeg${{ matrix.ext }}${SEP}." --name ytd-${{ matrix.name }} --clean --noconfirm ytd.py
+          else
+            echo "Building without ffmpeg"
+            pyinstaller --onefile --name ytd-${{ matrix.name }} --clean --noconfirm ytd.py
           fi
           echo "Build complete for ${{ matrix.name }}"
 
@@ -93,8 +103,9 @@ jobs:
         with:
           files: ytd-*
           body: |
-            ## What's New
+            ## What's New in v1.2
 
+            - **FFmpeg bundled** — high-quality video (1080p/4K) works out of the box, no separate install needed
             - **Video Download**: Best / 4K / 1080p / 720p / 480p quality presets
             - **Audio Extract**: Best / 320k / 192k / 128k / 64k bitrate options
             - **Playlist Support**: Download all, pick range, or select individual videos by title
@@ -107,16 +118,6 @@ jobs:
 
             ## Platform Binaries
 
-            - **Windows**: `ytd-Windows.exe` (~15.5 MB)
-            - **Linux**: `ytd-Linux` (~29.7 MB)
-            - **macOS**: `ytd-macOS` (~14.4 MB)
-
-            ## Usage
-
-            ```
-            ./ytd-Windows.exe   # Windows
-            ./ytd-Linux         # Linux
-            ./ytd-macOS         # macOS
-            ```
-
-            Requires **FFmpeg** installed for best-quality video+audio merging. Without FFmpeg, falls back to best single-stream file.
+            - **Windows**: `ytd-Windows.exe`
+            - **Linux**: `ytd-Linux`
+            - **macOS**: `ytd-macOS`
