@@ -36,13 +36,26 @@ pip install yt-dlp
 # Linux: sudo apt install ffmpeg
 ```
 
-## Usage
+## Pre-built binaries (no Python required)
+
+Download the latest executable for your OS from [Releases](https://github.com/yashkumar-dev/YT_downloader/releases):
+
+| Platform | File |
+|----------|------|
+| Windows | `ytd-Windows.exe` |
+| macOS | `ytd-macOS` |
+| Linux | `ytd-Linux` |
+
+Just download, double-click (or `chmod +x` on Linux/macOS), and run.
+
+## Usage (Python)
 
 ```bash
+# Using Python:
 python ytd.py
-```
 
-Or on Windows, double-click `ytd.bat`.
+# Or on Windows, double-click ytd.bat
+```
 
 ### Interactive flow
 
