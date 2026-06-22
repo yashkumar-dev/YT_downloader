@@ -58,30 +58,44 @@ jobs:
           pip install pyinstaller yt-dlp
 
       - name: Copy ffmpeg for bundling
+        shell: python
         run: |
-          ffmpeg_path=""
-          if command -v ffmpeg >/dev/null 2>&1; then
-            ffmpeg_path="$(command -v ffmpeg)"
-          fi
-          if [ -z "$ffmpeg_path" ] && [ -f "/c/ProgramData/chocolatey/bin/ffmpeg.exe" ]; then
-            ffmpeg_path="/c/ProgramData/chocolatey/bin/ffmpeg.exe"
-          fi
-          if [ -z "$ffmpeg_path" ] && [ -f "/usr/bin/ffmpeg" ]; then
-            ffmpeg_path="/usr/bin/ffmpeg"
-          fi
-          if [ -z "$ffmpeg_path" ] && [ -f "/usr/local/bin/ffmpeg" ]; then
-            ffmpeg_path="/usr/local/bin/ffmpeg"
-          fi
-          if [ -z "$ffmpeg_path" ] && [ -f "/opt/homebrew/bin/ffmpeg" ]; then
-            ffmpeg_path="/opt/homebrew/bin/ffmpeg"
-          fi
-          if [ -n "$ffmpeg_path" ]; then
-            echo "Found ffmpeg at $ffmpeg_path"
-            cp "$ffmpeg_path" "./ffmpeg${{ matrix.ext }}"
-            ls -la "./ffmpeg${{ matrix.ext }}"
-          else
-            echo "ffmpeg not found"
-          fi
+          import glob, shutil, os, sys
+
+          ext = '${{ matrix.ext }}'
+          ffmpeg_path = None
+
+          if sys.platform == 'win32':
+              # Find ffmpeg via PATH (gets chocolatey shim)
+              found = shutil.which('ffmpeg')
+              if found:
+                  size = os.path.getsize(found)
+                  # If it's a chocolatey shim (<1MB), find real binary in lib
+                  if size < 1_000_000:
+                      for pattern in [
+                          r'C:\ProgramData\chocolatey\lib\*\tools\**\ffmpeg.exe',
+                          r'C:\ProgramData\chocolatey\lib\*\tools\ffmpeg.exe',
+                      ]:
+                          for f in glob.glob(pattern, recursive=True):
+                              sz = os.path.getsize(f)
+                              if sz > 10_000_000:  # real ffmpeg is 100MB+
+                                  ffmpeg_path = f
+                                  break
+                          if ffmpeg_path:
+                              break
+                  else:
+                      ffmpeg_path = found
+          else:
+              # Linux/macOS: shutil.which works reliably
+              ffmpeg_path = shutil.which('ffmpeg')
+
+          if ffmpeg_path and os.path.getsize(ffmpeg_path) > 1_000_000:
+              shutil.copy2(ffmpeg_path, f'./ffmpeg{ext}')
+              print(f'Bundled ffmpeg from {ffmpeg_path} ({os.path.getsize(ffmpeg_path)} bytes)')
+          else:
+              print(f'ffmpeg not found or too small: {ffmpeg_path}')
+              if ffmpeg_path:
+                  print(f'  size was {os.path.getsize(ffmpeg_path) if os.path.exists(ffmpeg_path) else "N/A"}')
 
       - name: Build with PyInstaller
         run: |
