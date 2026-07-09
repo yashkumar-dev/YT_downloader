@@ -67,12 +67,12 @@ def start_pot_server():
     if _POT_SERVER_PROCESS is not None:
         return _POT_SERVER_PROCESS.poll() is None
 
-    server_dir = Path.home() / 'bgutil-ytdlp-pot-provider' / 'server'
+    server_dir = BASE_DIR / 'bgutil-ytdlp-pot-provider' / 'server'
     if not server_dir.exists():
         return False
 
     node_modules = str(server_dir / 'node_modules')
-    cache_dir = str(Path.home() / '.cache' / 'bgutil-ytdlp-pot-provider')
+    cache_dir = str(BASE_DIR / '.cache')
     Path(cache_dir).mkdir(parents=True, exist_ok=True)
 
     deno = shutil.which('deno')

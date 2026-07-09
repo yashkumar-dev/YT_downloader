@@ -6,3 +6,5 @@ dist/
 build/
 *.spec
 ytd.exe
+bgutil-ytdlp-pot-provider/
+.cache/
