@@ -11,40 +11,37 @@ A Python-based CLI tool to download YouTube videos/playlists in the highest qual
 - **Smart prompts** — shows video info (title, duration, resolutions) before download
 - **History** — tracks what you've downloaded and where
 - **Path memory** — remembers last download folder
-- **Skip duplicates** — warns if a video was already downloaded
+- **Skip duplicates** — warns if a video was already downloaded (detected by video ID)
 - **YouTube search** — directly search without pasting a URL
+- **PO Token protection** — generates proof-of-origin tokens to avoid bot blocks
+- **Client rotation** — 7-client fallback chain (web_safari → android → web → tv_downgraded → web_embedded → mweb → ios) handles blocks automatically
 
-## Requirements
-
-- Python 3.8+
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) (installed automatically via pip)
-
-## Pre-built binaries (recommended — no Python or ffmpeg required)
+## Pre-built binaries (recommended — nothing to install)
 
 Download the latest executable for your OS from [Releases](https://github.com/yashkumar-dev/YT_downloader/releases):
 
 | Platform | File | Size |
 |----------|------|------|
-| Windows | `ytd-Windows.exe` | ~51 MB |
-| macOS | `ytd-macOS` | ~29 MB |
-| Linux | `ytd-Linux` | ~125 MB |
+| Windows | `ytd-Windows.exe` | ~136 MB |
+| macOS | `ytd-macOS` | ~92 MB |
+| Linux | `ytd-Linux` | ~194 MB |
 
-Just download, double-click (or `chmod +x` on Linux/macOS), and run.
-
-**ffmpeg is bundled inside the executable** — high-quality downloads (1080p/4K) work out of the box with no manual setup.
+Just download, double-click (or `chmod +x` on Linux/macOS), and run.  
+**No Python, no ffmpeg, no Deno, no setup required** — everything is bundled inside the executable.
 
 ## Installation (from source)
 
 ```bash
 git clone https://github.com/yashkumar-dev/YT_downloader.git
 cd YT_downloader
-pip install yt-dlp
+pip install yt-dlp bgutil-ytdlp-pot-provider
+deno install  # optional, enables PO Token server
 ```
 
 > **Note:** If running from source, [ffmpeg](https://ffmpeg.org/download.html) is recommended for best quality video+audio merging.  
 > Install it via: `winget install ffmpeg` (Windows) / `brew install ffmpeg` (macOS) / `sudo apt install ffmpeg` (Linux).
 
-## Usage (Python)
+## Usage
 
 ```bash
 # Using Python:
@@ -83,17 +80,18 @@ python ytd.py
 
 ```
 YT_downloader/
-├── ytd.py                    # Main script
-├── ytd.bat                   # Windows batch shortcut
-├── .github/workflows/build.yml # CI: builds + bundles ffmpeg into EXE
-├── config.json               # Stores last download path (auto-generated)
-├── history.json              # Download history (auto-generated)
-├── requirements.txt          # Python dependencies
-└── README.md                 # This file
+├── ytd.py                             # Main script
+├── ytd.bat                            # Windows batch shortcut
+├── bgutil-ytdlp-pot-provider/         # PO Token server files (bundled in exe)
+├── .github/workflows/build.yml        # CI: builds + bundles everything into exe
+├── config.json                        # Stores last download path (auto-generated)
+├── history.json                       # Download history (auto-generated)
+└── README.md                          # This file
 ```
 
 ## Notes
 
-- **Pre-built binaries** include ffmpeg — high-quality downloads work immediately
+- **Pre-built binaries** include ffmpeg + PO Token server + Deno runtime — everything works immediately
 - When running from source, ffmpeg is required for best quality (merges separate video + audio streams); without it, falls back to best single-stream (usually 720p max)
 - Output format: `.mkv` (video), `.m4a` (audio)
+- No cookies, no login required — works anonymously using PO Token + client rotation
