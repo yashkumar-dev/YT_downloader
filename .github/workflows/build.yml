@@ -48,10 +48,20 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: brew install ffmpeg
 
-      - name: Install dependencies
+      - name: Install Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install server npm dependencies
+        run: |
+          cd bgutil-ytdlp-pot-provider/server
+          npm install --omit=dev
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller yt-dlp
+          pip install pyinstaller yt-dlp bgutil-ytdlp-pot-provider
 
       - name: Download & bundle ffmpeg (Windows)
         if: runner.os == 'Windows'
@@ -71,13 +81,18 @@ jobs:
 
       - name: Build with PyInstaller
         run: |
+          SEP="${{ matrix.sep }}"
+          ADD_DATA=""
+          if [ -d "bgutil-ytdlp-pot-provider/server" ]; then
+            ADD_DATA="--add-data bgutil-ytdlp-pot-provider/server${SEP}bgutil-ytdlp-pot-provider/server"
+            echo "Bundling PO Token server"
+          fi
           if [ -f "./ffmpeg${{ matrix.ext }}" ]; then
             echo "Bundling ffmpeg"
-            SEP="${{ matrix.sep }}"
-            pyinstaller --onefile --add-binary "./ffmpeg${{ matrix.ext }}${SEP}." --name ytd-${{ matrix.name }} --clean --noconfirm ytd.py
+            pyinstaller --onefile --add-binary "./ffmpeg${{ matrix.ext }}${SEP}." $ADD_DATA --name ytd-${{ matrix.name }} --clean --noconfirm ytd.py
           else
             echo "Building without ffmpeg"
-            pyinstaller --onefile --name ytd-${{ matrix.name }} --clean --noconfirm ytd.py
+            pyinstaller --onefile $ADD_DATA --name ytd-${{ matrix.name }} --clean --noconfirm ytd.py
           fi
           echo "Build complete for ${{ matrix.name }}"
           ls -la "dist/ytd-${{ matrix.name }}${{ matrix.ext }}"
@@ -107,18 +122,12 @@ jobs:
         with:
           files: ytd-*
           body: |
-            ## What's New in v1.2
+            ## What's Changed
 
-            - **FFmpeg bundled** — high-quality video (1080p/4K) works out of the box, no separate install needed
-            - **Video Download**: Best / 4K / 1080p / 720p / 480p quality presets
-            - **Audio Extract**: Best / 320k / 192k / 128k / 64k bitrate options
-            - **Playlist Support**: Download all, pick range, or select individual videos by title
-            - **YouTube Search**: Type any query directly — no URL needed
-            - **Smart Detection**: Auto-detects video, playlist, or video-in-playlist URLs
-            - **Info Preview**: Shows title, duration, and resolution before downloading
-            - **Download History**: Press `h` to view past downloads with saved paths
-            - **Path Memory**: Remembers last download folder
-            - **Skip Existing**: Skips files already downloaded
+            - **PO Token server bundled** — Deno server files included in the .exe, PO Token generation works out of the box
+            - **Client rotation** — 7-client fallback chain handles bot blocks automatically
+            - **Progress bar fix** — works on Windows cp1252 terminals
+            - **All deps inside project** — bgutil-ytdlp-pot-provider moved into repo
 
             ## Platform Binaries
 

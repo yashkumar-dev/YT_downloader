@@ -67,11 +67,26 @@ def start_pot_server():
     if _POT_SERVER_PROCESS is not None:
         return _POT_SERVER_PROCESS.poll() is None
 
-    server_dir = BASE_DIR / 'bgutil-ytdlp-pot-provider' / 'server'
-    if not server_dir.exists():
+    server_dir = None
+    if getattr(sys, 'frozen', False):
+        try:
+            _mei = Path(sys._MEIPASS)
+            bundled = _mei / 'bgutil-ytdlp-pot-provider' / 'server'
+            if bundled.exists():
+                server_dir = bundled
+        except Exception:
+            pass
+    if server_dir is None:
+        candidate = BASE_DIR / 'bgutil-ytdlp-pot-provider' / 'server'
+        if candidate.exists():
+            server_dir = candidate
+    if server_dir is None:
         return False
 
     node_modules = str(server_dir / 'node_modules')
+    if not Path(node_modules).exists():
+        return False
+
     cache_dir = str(BASE_DIR / '.cache')
     Path(cache_dir).mkdir(parents=True, exist_ok=True)
 
