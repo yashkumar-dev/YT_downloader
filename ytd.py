@@ -90,7 +90,13 @@ def start_pot_server():
     cache_dir = str(BASE_DIR / '.cache')
     Path(cache_dir).mkdir(parents=True, exist_ok=True)
 
-    deno = shutil.which('deno')
+    deno = None
+    if getattr(sys, 'frozen', False):
+        bundled_deno = Path(sys._MEIPASS) / ('deno.exe' if os.name == 'nt' else 'deno')
+        if bundled_deno.exists():
+            deno = str(bundled_deno)
+    if not deno:
+        deno = shutil.which('deno')
     if not deno:
         return False
 

@@ -58,6 +58,13 @@ jobs:
           cd bgutil-ytdlp-pot-provider/server
           npm install --omit=dev
 
+      - name: Copy Deno binary for bundling
+        run: |
+          DENO_PATH="$(command -v deno)"
+          echo "Deno at: $DENO_PATH"
+          cp "$DENO_PATH" "./deno${{ matrix.ext }}"
+          ls -la "./deno${{ matrix.ext }}"
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
@@ -86,6 +93,10 @@ jobs:
           if [ -d "bgutil-ytdlp-pot-provider/server" ]; then
             ADD_DATA="--add-data bgutil-ytdlp-pot-provider/server${SEP}bgutil-ytdlp-pot-provider/server"
             echo "Bundling PO Token server"
+          fi
+          if [ -f "./deno${{ matrix.ext }}" ]; then
+            ADD_DATA="$ADD_DATA --add-data deno${{ matrix.ext }}${SEP}."
+            echo "Bundling Deno runtime"
           fi
           if [ -f "./ffmpeg${{ matrix.ext }}" ]; then
             echo "Bundling ffmpeg"
