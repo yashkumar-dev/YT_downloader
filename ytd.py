@@ -4,7 +4,12 @@ import sys
 import shutil
 import re
 import json
+import subprocess
+import atexit
+import time
 import urllib.parse
+import urllib.request
+import urllib.error
 from pathlib import Path
 from datetime import datetime
 
@@ -23,6 +28,95 @@ QUALITY_PRESETS = {
     '720':  ('bestvideo[height<=720]+bestaudio/best[height<=720]',   'best[height<=720]'),
     '480':  ('bestvideo[height<=480]+bestaudio/best[height<=480]',   'best[height<=480]'),
 }
+
+CLIENT_FALLBACK_CHAIN = [
+    'web_safari',
+    'android',
+    'web',
+    'tv_downgraded',
+    'web_embedded',
+    'mweb',
+    'ios',
+]
+
+try:
+    import bgutil_ytdlp_pot_provider  # noqa
+    HAS_POT = True
+except ImportError:
+    HAS_POT = False
+
+# Also detect bgutil as yt-dlp plugin (installed to yt_dlp_plugins/extractor/)
+if not HAS_POT:
+    try:
+        from yt_dlp_plugins.extractor.getpot_bgutil import BgUtilPTPBase  # noqa
+        HAS_POT = True
+    except ImportError:
+        pass
+
+BROWSER_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+}
+
+_POT_SERVER_PROCESS = None
+
+
+def start_pot_server():
+    global _POT_SERVER_PROCESS
+    if _POT_SERVER_PROCESS is not None:
+        return _POT_SERVER_PROCESS.poll() is None
+
+    server_dir = Path.home() / 'bgutil-ytdlp-pot-provider' / 'server'
+    if not server_dir.exists():
+        return False
+
+    node_modules = str(server_dir / 'node_modules')
+    cache_dir = str(Path.home() / '.cache' / 'bgutil-ytdlp-pot-provider')
+    Path(cache_dir).mkdir(parents=True, exist_ok=True)
+
+    deno = shutil.which('deno')
+    if not deno:
+        return False
+
+    cmd = [deno, 'run', '--allow-env', '--allow-net',
+           f'--allow-ffi={node_modules}',
+           f'--allow-read={server_dir},{node_modules}',
+           f'--allow-write={cache_dir}',
+           'src/main.ts', '--port', '4416']
+
+    try:
+        _POT_SERVER_PROCESS = subprocess.Popen(
+            cmd, cwd=str(server_dir),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(15):
+            try:
+                urllib.request.urlopen('http://127.0.0.1:4416/ping', timeout=1)
+                return True
+            except Exception:
+                time.sleep(0.5)
+        _POT_SERVER_PROCESS.kill()
+        _POT_SERVER_PROCESS = None
+        return False
+    except Exception:
+        if _POT_SERVER_PROCESS:
+            _POT_SERVER_PROCESS.kill()
+            _POT_SERVER_PROCESS = None
+        return False
+
+
+def stop_pot_server():
+    global _POT_SERVER_PROCESS
+    if _POT_SERVER_PROCESS:
+        try:
+            _POT_SERVER_PROCESS.terminate()
+            _POT_SERVER_PROCESS.wait(timeout=3)
+        except Exception:
+            _POT_SERVER_PROCESS.kill()
+        _POT_SERVER_PROCESS = None
+
+
+atexit.register(stop_pot_server)
 
 
 def load_config():
@@ -67,6 +161,82 @@ def check_ffmpeg():
     return get_ffmpeg_path() is not None
 
 
+def build_base_opts():
+    return {
+        'quiet': True,
+        'no_warnings': True,
+        'windowsfilenames': True,
+        'extractor_retries': 5,
+        'file_access_retries': 3,
+        'fragment_retries': 5,
+        'http_headers': dict(BROWSER_HEADERS),
+    }
+
+
+def extract_with_fallback(url, download=False, extra_opts=None, bot_msg=None, silent=False):
+    config = load_config()
+    last = config.get('last_working_client')
+    start = 0
+    if last and last in CLIENT_FALLBACK_CHAIN:
+        start = CLIENT_FALLBACK_CHAIN.index(last)
+
+    bot_errors = []
+    api_errors = []
+
+    def try_client(client, skip_webpage=False):
+        nonlocal last
+        opts = build_base_opts()
+        if extra_opts:
+            opts.update(extra_opts)
+
+        existing = opts.get('extractor_args', {})
+        merged = dict(existing)
+        youtube_args = list(existing.get('youtube', []))
+        youtube_args = [a for a in youtube_args if not a.startswith('player_client=')]
+        youtube_args.insert(0, f'player_client={client}')
+        if skip_webpage and 'player_skip=webpage' not in youtube_args:
+            youtube_args.append('player_skip=webpage')
+        merged['youtube'] = youtube_args
+        opts['extractor_args'] = merged
+
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=download)
+            if client != last and download:
+                config['last_working_client'] = client
+                save_config(config)
+            return info
+        except Exception as e:
+            err = str(e).lower()
+            if any(kw in err for kw in ['bot', 'sign in to confirm', 'sign in required', 'sign in', '403']):
+                bot_errors.append(f"'{client}' blocked")
+                return None
+            if any(kw in err for kw in ['json', 'parse', 'failed to parse', 'http error']):
+                api_errors.append(f"'{client}' API error")
+                return None
+            raise
+
+    for client in CLIENT_FALLBACK_CHAIN[start:]:
+        result = try_client(client)
+        if result is not None:
+            return result
+        if not api_errors and not silent:
+            print(f"   Client '{client}' blocked, trying next...")
+
+    if api_errors and not bot_errors:
+        for client in CLIENT_FALLBACK_CHAIN:
+            result = try_client(client, skip_webpage=True)
+            if result is not None:
+                return result
+        msg = "YouTube API changed. Try: pip install -U yt-dlp"
+    elif api_errors:
+        msg = f"YouTube blocked ({'; '.join(bot_errors)}) and API changed ({'; '.join(api_errors)}). Try: pip install -U yt-dlp"
+    else:
+        msg = bot_msg or f"YouTube blocked all clients. Try again later."
+
+    raise Exception(msg)
+
+
 def load_history():
     if HISTORY_FILE.exists():
         try:
@@ -93,7 +263,7 @@ def show_history():
     for entry in history[-10:]:
         tag = 'A' if entry.get('mode') == 'audio' else 'V'
         p = entry.get('path', '')
-        print(f"   [{entry['date']}] [{tag}] {entry.get('title', '?')[:50]}")
+        print(f"   [{entry.get('date', '?')}] [{tag}] {entry.get('title', '?')[:50]}")
         print(f"   {p if p else '(path not recorded)'}")
     print()
 
@@ -127,12 +297,14 @@ def progress_hook(d):
         speed = d.get('speed', 0)
         eta = d.get('eta', 0)
         pct = (down / total * 100) if total else 0
-        bar = '█' * int(pct / 5) + '░' * (20 - int(pct / 5))
+        bar = '#' * int(pct / 5) + '-' * (20 - int(pct / 5))
         spd = speed / 1024 / 1024 if speed else 0
         sys.stdout.write(f"\r   {bar} {pct:.1f}% | {spd:.1f} MB/s | ETA: {eta}s")
         sys.stdout.flush()
     elif d['status'] == 'finished':
-        print(f"\n   Downloaded: {os.path.basename(d['filename'])}")
+        fname = os.path.basename(d['filename'])
+        fname_safe = fname.encode('utf-8', errors='replace').decode('utf-8')
+        print(f"\n   Downloaded: {fname_safe}")
 
 
 def download_video(url, path, mode='video', quality='best', audio_bitrate='best'):
@@ -167,28 +339,25 @@ def download_video(url, path, mode='video', quality='best', audio_bitrate='best'
         opts['postprocessors'] = [pp]
 
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            title = info.get('title', 'Unknown')
-            save_history({
-                'url': url,
-                'title': title,
-                'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
-                'mode': mode,
-                'path': path,
-            })
-            print(f"\n   Saved to: {path}")
-            return title
+        info = extract_with_fallback(url, download=True, extra_opts=opts, silent=True)
+        title = info.get('title', 'Unknown')
+        save_history({
+            'url': url,
+            'title': title,
+            'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
+            'mode': mode,
+            'path': path,
+        })
+        print(f"\n   Saved to: {path}")
+        return title
     except Exception as e:
         print(f"\n   Error: {e}")
         return None
 
 
 def detect_link_type(url):
-    ydl_opts = {'quiet': True, 'no_warnings': True, 'extract_flat': True}
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+        info = extract_with_fallback(url, extra_opts={'extract_flat': True})
         if info.get('_type') == 'playlist' or 'entries' in info:
             return 'playlist', info
         return 'video', info
@@ -200,9 +369,23 @@ def strip_playlist_param(url):
     return re.sub(r'[?&]list=[^&]+', '', url).rstrip('?&')
 
 
+def extract_video_id(url):
+    m = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})', url)
+    return m.group(1) if m else None
+
+
+def extract_playlist_id(url):
+    m = re.search(r'[?&]list=([^&]+)', url)
+    return m.group(1) if m else None
+
+
 def is_downloaded_before(url):
+    vid = extract_video_id(url)
+    if not vid:
+        return False
     for entry in load_history():
-        if entry.get('url') == url:
+        ev = extract_video_id(entry.get('url', ''))
+        if ev == vid:
             return True
     return False
 
@@ -214,29 +397,28 @@ def show_info_and_confirm(url, audio_bitrate='best'):
             print("   Skipped.")
             return False
 
-    ydl_opts = {'quiet': True, 'no_warnings': True}
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            title = info.get('title', 'Unknown')
-            dur = info.get('duration', 0)
-            dur_int = int(dur or 0)
-            dur_str = f"{dur_int//3600:02d}:{(dur_int%3600)//60:02d}:{dur_int%60:02d}" if dur_int else "?"
-            res_set = set()
-            for f in info.get('formats') or []:
-                if f.get('height') and f.get('vcodec') and f['vcodec'] != 'none':
-                    res_set.add(f['height'])
-            res_str = ', '.join(f'{r}p' for r in sorted(res_set, reverse=True)[:8]) if res_set else "?"
-            abr = info.get('abr', None)
+        info = extract_with_fallback(url)
+        title = info.get('title', 'Unknown')
+        dur = info.get('duration', 0)
+        dur_int = int(dur or 0)
+        dur_str = f"{dur_int//3600:02d}:{(dur_int%3600)//60:02d}:{dur_int%60:02d}" if dur_int else "?"
+        res_set = set()
+        for f in info.get('formats') or []:
+            if f.get('height') and f.get('vcodec') and f['vcodec'] != 'none':
+                res_set.add(f['height'])
+        res_str = ', '.join(f'{r}p' for r in sorted(res_set, reverse=True)[:8]) if res_set else "?"
+        abr = info.get('abr', None)
 
-            print(f"\n   Title: {title}")
-            print(f"   Duration: {dur_str}")
-            if res_str != '?':
-                print(f"   Resolutions: {res_str}")
-            if abr:
-                print(f"   Audio: {abr}kbps")
+        print(f"\n   Title: {title}")
+        print(f"   Duration: {dur_str}")
+        if res_str != '?':
+            print(f"   Resolutions: {res_str}")
+        if abr:
+            print(f"   Audio: {abr}kbps")
     except Exception as e:
         print(f"\n   Could not fetch video info: {e}")
+        return False
 
     c = input("\n   Download? (Y/n): ").strip().lower()
     return c != 'n'
@@ -259,10 +441,16 @@ def handle_video_in_playlist(url, mode, quality, audio_bitrate='best'):
 
 
 def handle_playlist(url, mode, quality, audio_bitrate='best'):
+    pid = extract_playlist_id(url)
+    if pid and 'watch?' in url:
+        url = f"https://youtube.com/playlist?list={pid}"
     print("\n   Playlist detected, fetching info...")
-    ydl_opts = {'quiet': True, 'no_warnings': True, 'extract_flat': True}
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    try:
+        info = extract_with_fallback(url, extra_opts={'extract_flat': True})
+    except Exception as e:
+        print(f"   Error: {e}")
+        print("   Try: pip install -U yt-dlp")
+        return
 
     raw_entries = info.get('entries') or []
     entries = [e for e in raw_entries if e and e.get('id')]
@@ -302,7 +490,9 @@ def handle_playlist(url, mode, quality, audio_bitrate='best'):
     elif choice == '2':
         r = input("\n   Enter range (e.g. 1-10): ").strip()
         m = re.match(r'^(\d+)\s*-\s*(\d+)$', r)
-        if m:
+        if not m:
+            print("   Invalid range format.")
+        else:
             start, end = int(m.group(1)), int(m.group(2))
             if start < 1:
                 start = 1
@@ -320,6 +510,9 @@ def handle_playlist(url, mode, quality, audio_bitrate='best'):
     elif choice == '3':
         sel = input("\n   Enter numbers (comma-separated, e.g. 1,3,5): ").strip()
         idxs = [int(x.strip()) for x in sel.split(',') if x.strip().isdigit()]
+        if not idxs:
+            print("   No valid numbers entered.")
+            return
         path = get_download_path()
         for idx in idxs:
             if 1 <= idx <= len(entries):
@@ -331,7 +524,9 @@ def handle_playlist(url, mode, quality, audio_bitrate='best'):
 
     elif choice == '4':
         i = input("\n   Enter video number: ").strip()
-        if i.isdigit():
+        if not i.isdigit():
+            print("   Invalid number.")
+        else:
             n = int(i)
             if 1 <= n <= len(entries):
                 e = entries[n - 1]
@@ -368,49 +563,40 @@ def is_url(text):
     text = text.strip()
     if text.startswith('http://') or text.startswith('https://'):
         return True
-    if 'youtube.com' in text or 'youtu.be' in text:
-        return True
-    if 'youtube' in text and '.' in text:
+    if re.search(r'(?:youtube\.com|youtu\.be)/', text):
         return True
     return False
 
 
 def search_youtube(query, max_results=10):
     print(f"\n   Searching YouTube for: {query}")
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'extract_flat': True,
-        'default_search': 'ytsearch',
-    }
     search_url = f"ytsearch{max_results}:{query}"
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(search_url, download=False)
-            entries = info.get('entries', [])
-            if not entries:
-                print("   No results found.")
-                return None
-            print(f"\n   Results:")
-            print(f"   {'#':<4} {'Title':<50} {'Duration':<10} Channel")
-            print("   " + "-" * 90)
-            results = []
-            for i, e in enumerate(entries, 1):
-                title = (e.get('title') or 'Unknown')[:48]
-                dur = e.get('duration', 0) or 0
-                dur_int = int(dur)
-                if dur_int >= 3600:
-                    dur_str = f"{dur_int//3600:02d}:{(dur_int%3600)//60:02d}:{dur_int%60:02d}"
-                elif dur_int:
-                    dur_str = f"{dur_int//60:02d}:{dur_int%60:02d}"
-                else:
-                    dur_str = "?:??"
-                channel = (e.get('channel') or e.get('uploader') or '?')[:20]
-                print(f"   {i:<4} {title:<50} {dur_str:<10} {channel}")
-                vid = e.get('id')
-                if vid:
-                    results.append((i, title.strip(), f"https://youtube.com/watch?v={vid}"))
-            return results
+        info = extract_with_fallback(search_url, extra_opts={'extract_flat': True, 'default_search': 'ytsearch'})
+        entries = info.get('entries', [])
+        if not entries:
+            print("   No results found.")
+            return None
+        print(f"\n   Results:")
+        print(f"   {'#':<4} {'Title':<50} {'Duration':<10} Channel")
+        print("   " + "-" * 90)
+        results = []
+        for i, e in enumerate(entries, 1):
+            title = (e.get('title') or 'Unknown')[:48]
+            dur = e.get('duration', 0) or 0
+            dur_int = int(dur)
+            if dur_int >= 3600:
+                dur_str = f"{dur_int//3600:02d}:{(dur_int%3600)//60:02d}:{dur_int%60:02d}"
+            elif dur_int:
+                dur_str = f"{dur_int//60:02d}:{dur_int%60:02d}"
+            else:
+                dur_str = "?:??"
+            channel = (e.get('channel') or e.get('uploader') or '?')[:20]
+            print(f"   {i:<4} {title:<50} {dur_str:<10} {channel}")
+            vid = e.get('id')
+            if vid:
+                results.append((i, title.strip(), f"https://youtube.com/watch?v={vid}"))
+        return results
     except Exception as e:
         print(f"   Search error: {e}")
         return None
@@ -439,6 +625,9 @@ def main():
     if not check_ffmpeg():
         print("ffmpeg not found! Install for best quality:")
         print("https://ffmpeg.org/download.html\n")
+
+    if HAS_POT:
+        start_pot_server()
 
     print("=" * 50)
     print("   YOUTUBE DOWNLOADER - Highest Quality")
